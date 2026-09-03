@@ -36,3 +36,22 @@ The home view (`src/views/home.tsx`, route `/`) ships empty on purpose — start
 there ([[new-page]]).
 
 <!-- Log this project's changes below, newest first, under a `## YYYY-MM-DD` heading. -->
+
+## 2026-09-03
+
+- Added `public/storm-scene/index.html`: a standalone (non-React, no build
+  step) Three.js r0.143.0 particle-orb scene, self-contained via an
+  importmap. **Deliberately exempt** from the springs-only motion rule — it
+  never enters the app's component tree. Must be served over HTTP; opening
+  it via `file://` blank-pages on the ES-module import (browser CORS, not a
+  bug — see the file's own README).
+- Added "Theo", a clickable virtual-assistant demo inside that same file:
+  click the orb (or Enter/Space) to cycle 6 scripted German messages in an
+  iMessage-style bubble, positioned every frame via `camera.project()` so it
+  tracks the orb through scroll/parallax. Purely simulated — no AI API, no
+  network call. Reviewed against this starter's motion/UX judgement
+  checklist (adapted for the non-React exemption); see the commit for the
+  fixes that came out of that review (aria-hidden reset on auto-hide,
+  length-scaled read time, hover/focus pause, non-overshooting exit easing).
+- Neither is wired into `src/views/home.tsx` yet — both live only as a
+  standalone demo under `public/`.
