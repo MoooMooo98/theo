@@ -21,12 +21,134 @@
     pointer-events: none;
     z-index: 2;
   }
+
+  /* ---------------------------------------------------------------------
+     Theo — virtual assistant demo. Vanilla CSS/JS: this file is a
+     standalone static page (no build step, no React), not the app's
+     spring-only animation system, so ordinary transitions/keyframes are
+     the right tool here.
+  --------------------------------------------------------------------- */
+  #theo-hitzone {
+    position: fixed;
+    top: 0; left: 0;
+    width: 0; height: 0;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 1px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    z-index: 5;
+    transition: border-color 0.3s ease, background 0.3s ease;
+  }
+  #theo-hitzone:hover,
+  #theo-hitzone:focus-visible {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  #theo-hitzone:focus-visible { outline: none; }
+
+  #theo-hint {
+    position: fixed;
+    top: 0; left: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+    z-index: 6;
+    pointer-events: none;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(20, 8, 16, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    padding: 7px 14px;
+    border-radius: 999px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  #theo-hint.visible { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #theo-hint.pulse { animation: theo-hint-pulse 2.6s ease-in-out infinite; }
+  @keyframes theo-hint-pulse {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); }
+    50% { transform: translate(-50%, -50%) scale(1.06); }
+  }
+
+  #theo-bubble-wrap {
+    position: fixed;
+    top: 0; left: 0;
+    transform: translate(-50%, calc(-100% - 2px)) scale(0.9);
+    transform-origin: 50% 100%;
+    z-index: 7;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+    opacity: 0;
+    /* Exit curve: plain decelerate, no overshoot (used when .visible is
+       removed — the entrance's springy pop-in curve lives on .visible
+       below, so leaving doesn't wobble on the way out). */
+    transition: opacity 0.28s ease, transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+    max-width: min(82vw, 320px);
+  }
+  #theo-bubble-wrap.visible {
+    opacity: 1;
+    transform: translate(-50%, calc(-100% - 10px)) scale(1);
+    pointer-events: auto; /* only while shown, so hover-to-pause can work without blocking the orb underneath while hidden */
+    transition: opacity 0.32s ease, transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  #theo-name {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 7px;
+  }
+  #theo-bubble {
+    position: relative;
+    background: rgba(255, 255, 255, 0.97);
+    color: #0b0b0c;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.42;
+    padding: 12px 16px;
+    border-radius: 20px;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38), 0 2px 10px rgba(0, 0, 0, 0.22);
+    backdrop-filter: blur(24px) saturate(1.7);
+    -webkit-backdrop-filter: blur(24px) saturate(1.7);
+  }
+  #theo-bubble::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -7px;
+    width: 14px;
+    height: 14px;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.97);
+    clip-path: polygon(50% 100%, 0 0, 100% 0);
+    filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.14));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #theo-hint, #theo-bubble-wrap { transition-duration: 0.01ms !important; }
+    #theo-hint.pulse { animation: none; }
+  }
 </style>
 </head>
 <body>
 <canvas id="scene"></canvas>
 <div id="scroll-host"></div>
 <div id="scroll-hint">scroll &darr;</div>
+
+<div id="theo-hitzone" role="button" tabindex="0" aria-label="Mit Theo, dem virtuellen Assistenten von Mirage Data, chatten"></div>
+<div id="theo-hint">👋 Klick mich</div>
+<div id="theo-bubble-wrap" aria-live="polite">
+  <span id="theo-name">Theo · Mirage Data</span>
+  <div id="theo-bubble"></div>
+</div>
 
 <script type="importmap">
 {
@@ -449,6 +571,128 @@ function onResize() {
 window.addEventListener('resize', onResize, { passive: true })
 
 // ---------------------------------------------------------------------------
+// Theo — virtual assistant demo
+//
+// A simulated assistant, not a real one: a fixed script of messages cycled
+// on click. No AI API, no network call, no external dependency — this is a
+// UX demo of "a 3D object as an assistant", not a chat feature.
+// ---------------------------------------------------------------------------
+const THEO_MESSAGES = [
+  'Hallo! Schön, dass du da bist.',
+  'Ich bin Theo, dein virtueller Assistent bei Mirage Data.',
+  'Ich kann mit deiner zukünftigen Website verbunden werden und deine Kunden bei Fragen, IT-Support und digitalen Anliegen unterstützen.',
+  'Ich kann kurze Vorschläge geben, Orientierung schaffen und als erster digitaler Ansprechpartner funktionieren.',
+  'Wenn du das Formular ausfüllst, kann ich dir zeigen, welche Vorteile Digitalisierung für dein Business haben kann.',
+  'Lass uns herausfinden, wie Mirage Data dein Unternehmen digital stärker machen kann.',
+]
+
+const theoEl = {
+  hitzone: document.getElementById('theo-hitzone'),
+  hint: document.getElementById('theo-hint'),
+  wrap: document.getElementById('theo-bubble-wrap'),
+  bubble: document.getElementById('theo-bubble'),
+}
+
+const theoState = { index: 0, hasInteracted: false, hideTimer: 0 }
+
+function theoHideBubble() {
+  theoEl.wrap.classList.remove('visible')
+  theoEl.wrap.setAttribute('aria-hidden', 'true')
+}
+
+// Reading time scales with message length (~230ms/word — a bit slower than
+// average silent-reading speed, since this pops in mid-scroll) so the two
+// longest scripted messages don't get cut off before they're readable.
+function theoScheduleHide(ms) {
+  clearTimeout(theoState.hideTimer)
+  theoState.hideTimer = setTimeout(theoHideBubble, ms)
+}
+
+function theoShowMessage() {
+  const message = THEO_MESSAGES[theoState.index]
+  theoEl.bubble.textContent = message
+  theoState.index = (theoState.index + 1) % THEO_MESSAGES.length
+  theoEl.wrap.classList.add('visible')
+  theoEl.wrap.setAttribute('aria-hidden', 'false')
+
+  if (!theoState.hasInteracted) {
+    theoState.hasInteracted = true
+    theoEl.hint.classList.remove('visible', 'pulse')
+  }
+
+  const wordCount = message.trim().split(/\s+/).length
+  theoScheduleHide(clamp(wordCount * 230, 2600, 7000))
+}
+
+theoEl.hitzone.addEventListener('click', theoShowMessage)
+theoEl.hitzone.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); theoShowMessage() }
+})
+
+// Pause the auto-hide while the visitor is actually reading the bubble
+// (pointer hover or keyboard focus inside it); resume with a short grace
+// period after they leave, instead of losing the message outright.
+theoEl.wrap.addEventListener('mouseenter', () => clearTimeout(theoState.hideTimer))
+theoEl.wrap.addEventListener('mouseleave', () => theoScheduleHide(1800))
+theoEl.wrap.addEventListener('focusin', () => clearTimeout(theoState.hideTimer))
+theoEl.wrap.addEventListener('focusout', () => theoScheduleHide(1800))
+
+// A gentle one-time invite, once the storm has visibly appeared — dismissed
+// permanently on first interaction.
+setTimeout(() => {
+  if (!theoState.hasInteracted) theoEl.hint.classList.add('visible', 'pulse')
+}, 2200)
+
+// Keep the hitzone / hint / bubble glued to the orb's actual on-screen
+// position and apparent size as it scrolls, grows and sways with parallax.
+const _theoWorld = new THREE.Vector3()
+const _theoLast = { x: NaN, y: NaN, r: NaN }
+function updateTheoPosition() {
+  sceneObj.group.updateMatrixWorld()
+  _theoWorld.set(0, 0, 0).applyMatrix4(sceneObj.group.matrixWorld)
+  const dist = Math.max(0.5, camera.position.distanceTo(_theoWorld))
+
+  _theoWorld.project(camera)
+  const vw = window.innerWidth, vh = window.innerHeight
+  const x = (_theoWorld.x * 0.5 + 0.5) * vw
+  const y = (1 - (_theoWorld.y * 0.5 + 0.5)) * vh
+
+  const worldRadius = 2.5 * sceneObj.group.scale.x
+  const vFov = camera.fov * Math.PI / 180
+  const pxPerWorldUnit = vh / (2 * Math.tan(vFov / 2) * dist)
+  const screenRadius = clamp(worldRadius * pxPerWorldUnit, 60, vh * 0.42)
+
+  // The lerped scroll/parallax values settle asymptotically near rest —
+  // skip the DOM writes once sub-pixel, rather than writing the same
+  // style string every frame indefinitely.
+  if (
+    Math.abs(x - _theoLast.x) < 0.5 &&
+    Math.abs(y - _theoLast.y) < 0.5 &&
+    Math.abs(screenRadius - _theoLast.r) < 0.5
+  ) return
+  _theoLast.x = x; _theoLast.y = y; _theoLast.r = screenRadius
+
+  theoEl.hitzone.style.left = x + 'px'
+  theoEl.hitzone.style.top = y + 'px'
+  theoEl.hitzone.style.width = screenRadius * 2 + 'px'
+  theoEl.hitzone.style.height = screenRadius * 2 + 'px'
+
+  // Anchors sit above the orb's top edge and grow upward (translateY(-100%)),
+  // so on a tall/narrow viewport where that edge is near y=0 they'd clip off
+  // screen — keep a safe top margin for the hint pill and the (taller,
+  // multi-line) bubble + name label.
+  const hintTop = Math.max(56, y - screenRadius - 16)
+  const bubbleTop = Math.max(108, y - screenRadius - 14)
+
+  theoEl.hint.style.left = x + 'px'
+  theoEl.hint.style.top = hintTop + 'px'
+
+  const bubbleX = clamp(x, 92, vw - 92)
+  theoEl.wrap.style.left = bubbleX + 'px'
+  theoEl.wrap.style.top = bubbleTop + 'px'
+}
+
+// ---------------------------------------------------------------------------
 // Render loop
 // ---------------------------------------------------------------------------
 function render() {
@@ -459,6 +703,7 @@ function render() {
   mouseSmooth.y = Lerp(mouseSmooth.y, POINTER.ndc.y, 0.06)
   updatePointer()
   sceneObj.render(scrollCurrent, mouseSmooth)
+  updateTheoPosition()
 
   camera.layers.set(LAYERS.TORUS_SCENE);  torusComposer.render()
   camera.layers.set(LAYERS.BLOOM_SCENE);  bloomComposer.render()
@@ -466,7 +711,7 @@ function render() {
 }
 
 // Expose for debugging/verification.
-window.__storm = { sceneObj, get scrollCurrent() { return scrollCurrent }, camera, torusComposer, bloomComposer, finalComposer, renderer, THREE }
+window.__storm = { sceneObj, get scrollCurrent() { return scrollCurrent }, camera, torusComposer, bloomComposer, finalComposer, renderer, THREE, theoState }
 
 render()
 </script>
