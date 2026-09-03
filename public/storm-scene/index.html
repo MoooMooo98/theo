@@ -34,18 +34,16 @@
     width: 0; height: 0;
     transform: translate(-50%, -50%);
     border-radius: 50%;
-    border: 1px solid transparent;
-    background: transparent;
     cursor: pointer;
     z-index: 5;
-    transition: border-color 0.3s ease, background 0.3s ease;
+    /* Intentionally no hover/mouse visual — the storm itself is the only
+       thing that should be visible. Keyboard-only focus ring for a11y. */
+    outline: none;
   }
-  #theo-hitzone:hover,
   #theo-hitzone:focus-visible {
-    border-color: rgba(255, 255, 255, 0.16);
-    background: rgba(255, 255, 255, 0.03);
+    outline: 1px solid rgba(255, 255, 255, 0.35);
+    outline-offset: 2px;
   }
-  #theo-hitzone:focus-visible { outline: none; }
 
   #theo-hint {
     position: fixed;
@@ -77,23 +75,34 @@
   #theo-bubble-wrap {
     position: fixed;
     top: 0; left: 0;
-    transform: translate(-50%, calc(-100% - 2px)) scale(0.9);
-    transform-origin: 50% 100%;
     z-index: 7;
     display: flex;
     flex-direction: column;
-    align-items: center;
     pointer-events: none;
     opacity: 0;
     /* Exit curve: plain decelerate, no overshoot (used when .visible is
        removed — the entrance's springy pop-in curve lives on .visible
        below, so leaving doesn't wobble on the way out). */
     transition: opacity 0.28s ease, transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-    max-width: min(82vw, 320px);
+    max-width: min(78vw, 300px);
   }
+  /* Bubble sits beside the orb (left or right), vertically centered on it —
+     never above. Base (hidden) state sits flush against the orb; .visible
+     slides it out a little further, which is also the entrance motion. */
+  #theo-bubble-wrap[data-side="right"] {
+    transform: translate(0, -50%) scale(0.92);
+    transform-origin: 0% 50%;
+    align-items: flex-start;
+  }
+  #theo-bubble-wrap[data-side="left"] {
+    transform: translate(-100%, -50%) scale(0.92);
+    transform-origin: 100% 50%;
+    align-items: flex-end;
+  }
+  #theo-bubble-wrap.visible[data-side="right"] { transform: translate(16px, -50%) scale(1); }
+  #theo-bubble-wrap.visible[data-side="left"] { transform: translate(calc(-100% - 16px), -50%) scale(1); }
   #theo-bubble-wrap.visible {
     opacity: 1;
-    transform: translate(-50%, calc(-100% - 10px)) scale(1);
     pointer-events: auto; /* only while shown, so hover-to-pause can work without blocking the orb underneath while hidden */
     transition: opacity 0.32s ease, transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
@@ -119,16 +128,36 @@
     backdrop-filter: blur(24px) saturate(1.7);
     -webkit-backdrop-filter: blur(24px) saturate(1.7);
   }
-  #theo-bubble::after {
+  #theo-bubble-next {
+    display: block;
+    margin-top: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(11, 11, 12, 0.42);
+  }
+  /* Tail points from the bubble's inner edge back toward the orb. */
+  [data-side="right"] #theo-bubble::after {
     content: '';
     position: absolute;
-    left: 50%;
-    bottom: -7px;
-    width: 14px;
-    height: 14px;
-    transform: translateX(-50%);
+    left: -6px;
+    top: 50%;
+    width: 13px;
+    height: 13px;
+    transform: translateY(-50%);
     background: rgba(255, 255, 255, 0.97);
-    clip-path: polygon(50% 100%, 0 0, 100% 0);
+    clip-path: polygon(100% 50%, 0 0, 0 100%);
+    filter: drop-shadow(-2px 0 2px rgba(0, 0, 0, 0.12));
+  }
+  [data-side="left"] #theo-bubble::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: 50%;
+    width: 13px;
+    height: 13px;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.97);
+    clip-path: polygon(0 50%, 100% 0, 100% 100%);
     filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.14));
   }
 
@@ -145,9 +174,12 @@
 
 <div id="theo-hitzone" role="button" tabindex="0" aria-label="Mit Theo, dem virtuellen Assistenten von Mirage Data, chatten"></div>
 <div id="theo-hint">👋 Klick mich</div>
-<div id="theo-bubble-wrap" aria-live="polite">
+<div id="theo-bubble-wrap" data-side="right" aria-live="polite">
   <span id="theo-name">Theo · Mirage Data</span>
-  <div id="theo-bubble"></div>
+  <div id="theo-bubble">
+    <span id="theo-bubble-text"></span>
+    <span id="theo-bubble-next">Weiter drücken für nächste Nachricht</span>
+  </div>
 </div>
 
 <script type="importmap">
@@ -590,10 +622,10 @@ const theoEl = {
   hitzone: document.getElementById('theo-hitzone'),
   hint: document.getElementById('theo-hint'),
   wrap: document.getElementById('theo-bubble-wrap'),
-  bubble: document.getElementById('theo-bubble'),
+  bubbleText: document.getElementById('theo-bubble-text'),
 }
 
-const theoState = { index: 0, hasInteracted: false, hideTimer: 0 }
+const theoState = { index: 0, hasInteracted: false, hideTimer: 0, side: 'right' }
 
 function theoHideBubble() {
   theoEl.wrap.classList.remove('visible')
@@ -610,7 +642,13 @@ function theoScheduleHide(ms) {
 
 function theoShowMessage() {
   const message = THEO_MESSAGES[theoState.index]
-  theoEl.bubble.textContent = message
+  theoEl.bubbleText.textContent = message
+
+  // Alternates right/left each message; updateTheoPosition() may still flip
+  // it if that side would run off the edge of a narrow viewport.
+  theoState.side = theoState.index % 2 === 0 ? 'right' : 'left'
+  theoEl.wrap.setAttribute('data-side', theoState.side)
+
   theoState.index = (theoState.index + 1) % THEO_MESSAGES.length
   theoEl.wrap.classList.add('visible')
   theoEl.wrap.setAttribute('aria-hidden', 'false')
@@ -677,19 +715,26 @@ function updateTheoPosition() {
   theoEl.hitzone.style.width = screenRadius * 2 + 'px'
   theoEl.hitzone.style.height = screenRadius * 2 + 'px'
 
-  // Anchors sit above the orb's top edge and grow upward (translateY(-100%)),
-  // so on a tall/narrow viewport where that edge is near y=0 they'd clip off
-  // screen — keep a safe top margin for the hint pill and the (taller,
-  // multi-line) bubble + name label.
+  // The one-time hint pill still sits above the orb (kept simple since it's
+  // just a short "click me" nudge, never overlaps content).
   const hintTop = Math.max(56, y - screenRadius - 16)
-  const bubbleTop = Math.max(108, y - screenRadius - 14)
-
   theoEl.hint.style.left = x + 'px'
   theoEl.hint.style.top = hintTop + 'px'
 
-  const bubbleX = clamp(x, 92, vw - 92)
-  theoEl.wrap.style.left = bubbleX + 'px'
-  theoEl.wrap.style.top = bubbleTop + 'px'
+  // The message bubble sits beside the orb (left or right of it, vertically
+  // centered), never above — flip off the requested side only if it would
+  // run past the viewport edge on a narrow screen.
+  const bubbleReach = 320 // ≈ CSS max-width + the 16px gap, safe estimate
+  const fitsRight = x + screenRadius + bubbleReach <= vw - 12
+  const fitsLeft = x - screenRadius - bubbleReach >= 12
+  let side = theoState.side
+  if (side === 'right' && !fitsRight && fitsLeft) side = 'left'
+  else if (side === 'left' && !fitsLeft && fitsRight) side = 'right'
+  if (theoEl.wrap.getAttribute('data-side') !== side) theoEl.wrap.setAttribute('data-side', side)
+
+  const edgeX = side === 'right' ? x + screenRadius : x - screenRadius
+  theoEl.wrap.style.left = edgeX + 'px'
+  theoEl.wrap.style.top = clamp(y, 90, vh - 90) + 'px'
 }
 
 // ---------------------------------------------------------------------------
